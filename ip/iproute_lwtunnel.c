@@ -284,6 +284,8 @@ static const char *seg6_action_names[SEG6_LOCAL_ACTION_MAX + 1] = {
 	[SEG6_LOCAL_ACTION_END_AM]		= "End.AM",
 	[SEG6_LOCAL_ACTION_END_BPF]		= "End.BPF",
 	[SEG6_LOCAL_ACTION_END_DT46]		= "End.DT46",
+	[SEG6_LOCAL_ACTION_END_NM_I]		= "End.NM.I",
+	[SEG6_LOCAL_ACTION_END_NM_E]		= "End.NM.E",
 };
 
 static const char *format_action_type(int action)
@@ -426,8 +428,17 @@ static void print_encap_seg6local(FILE *fp, struct rtattr *encap)
 	if (tb[SEG6_LOCAL_BPF])
 		print_encap_bpf_prog(fp, tb[SEG6_LOCAL_BPF], "endpoint");
 
+	if (tb[SEG6_LOCAL_NEXT_HEADER])
+		print_uint(PRINT_ANY, "next_header", "next_header %u ",
+			rta_getattr_u8(tb[SEG6_LOCAL_NEXT_HEADER]));
+
+	if (tb[SEG6_LOCAL_INGRESS_ADDRESS])
+		print_string(PRINT_ANY, "ingress_address",
+				"ingress_address %s ", rt_addr_n2a_rta(AF_INET6, tb[SEG6_LOCAL_INGRESS_ADDRESS]));
+
 	if (tb[SEG6_LOCAL_COUNTERS] && show_stats)
 		print_seg6_local_counters(fp, tb[SEG6_LOCAL_COUNTERS]);
+
 }
 
 static void print_encap_mpls(FILE *fp, struct rtattr *encap)
@@ -1116,7 +1127,8 @@ static int parse_encap_seg6local(struct rtattr *rta, size_t len, int *argcp,
 	int segs_ok = 0, hmac_ok = 0, table_ok = 0, vrftable_ok = 0;
 	int action_ok = 0, srh_ok = 0, bpf_ok = 0, counters_ok = 0;
 	int nh4_ok = 0, nh6_ok = 0, iif_ok = 0, oif_ok = 0;
-	__u32 action = 0, table, vrftable, iif, oif;
+	int next_header_ok = 0, ingress_address_ok = 0;
+	__u32 action = 0, table, vrftable, iif, oif, next_header;
 	struct ipv6_sr_hdr *srh;
 	char **argv = *argvp;
 	int argc = *argcp;
@@ -1216,6 +1228,21 @@ static int parse_encap_seg6local(struct rtattr *rta, size_t len, int *argcp,
 			if (lwt_parse_bpf(rta, len, &argc, &argv, SEG6_LOCAL_BPF,
 			    BPF_PROG_TYPE_LWT_SEG6LOCAL) < 0)
 				exit(-1);
+				} else if (strcmp(*argv, "next_header") == 0) {
+			NEXT_ARG();
+			if (next_header_ok++)
+				duparg2("next_header", *argv);
+			if (rtnl_rttable_a2n(&next_header, *argv))
+				invarg("invalid next header value\n", *argv);
+			ret = rta_addattr8(rta, len, SEG6_LOCAL_NEXT_HEADER,
+					    next_header);
+		} else if (strcmp(*argv, "ingress_address") == 0) {
+			NEXT_ARG();
+			if (ingress_address_ok++)
+				duparg2("ingress_address", *argv);
+			get_addr(&addr, *argv, AF_INET6);
+			ret = rta_addattr_l(rta, len, SEG6_LOCAL_INGRESS_ADDRESS,
+					    &addr.data, addr.bytelen);
 		} else {
 			break;
 		}
